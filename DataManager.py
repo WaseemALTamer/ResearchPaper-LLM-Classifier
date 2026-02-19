@@ -68,6 +68,8 @@ class Manager:
             for the ".jsonl" files, dont try to load 
         """
 
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
         with open(file_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
@@ -106,19 +108,27 @@ class Manager:
 
     def remove_filtred_from_queue(self):
         """
-            removes the data that are in the self.filtered_queue
-            if the data  is either in  the discraded_data  or in
-            side the relevent_data 
+            Removes data from self.filter_queue if it exists in
+            self.discarded_data or self.relevant_data,
+            comparing dictionaries while ignoring the "Classification" key.
         """
 
+        def strip_classification(d: dict) -> dict:
+            return {k: v for k, v in d.items() if k != "Classification"} # we remove the casification
 
-        filter_queue = [
-            item for item in self.filter_queue
-            if item not in self.discarded_data 
-            and item not in self.relevant_data
-        ]
+        # Preprocess comparison sets (faster lookup)
+        discarded_stripped = [strip_classification(d) for d in self.discarded_data]
+        relevant_stripped = [strip_classification(d) for d in self.relevant_data]
 
-        self.filter_queue = filter_queue
+        _filtered_queue = []
+
+        for item in self.filter_queue:
+            stripped_item = strip_classification(item)
+
+            if stripped_item not in discarded_stripped and stripped_item not in relevant_stripped:
+                _filtered_queue.append(item)
+
+        self.filter_queue = _filtered_queue
 
 
 
@@ -146,11 +156,17 @@ class Manager:
                 response = self.ai_agent.message(item_string) # send it to the ai
                 json_response = json.loads(response) # convert the respond to json this will verfy the
 
+                item["Classification"] = json_response # we add the ai classification
+
                 _valid_item = True
                 for tag in Config.TAGS:
                     if tag not in json_response["Tags"]:
                         _valid_item = False # if the tag is not in there then it is a not valid item
                         break
+
+                    if tag in json_response["Tags"]:
+                        path = Config.OUTPUT_DATA_PATH + f"{tag}.jsonl"
+                        self.jsonl_save_item(path, item)
                 
                 if _valid_item:
                     # valid items gets saved and appended to the saved
